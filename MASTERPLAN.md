@@ -18,7 +18,7 @@ This document outlines the complete development plan for StoryWeaver AI, from in
 
 #### Tasks
 - [ ] Create GitHub repository with proper .gitignore
-- [ ] Initialize monorepo with Turborepo
+- [ ] Initialize monorepo with Turborepo (optional) or single Next.js project
 - [ ] Set up Next.js 14 project with App Router
 - [ ] Configure TypeScript with strict mode
 - [ ] Set up ESLint + Prettier with Airbnb config
@@ -29,12 +29,9 @@ This document outlines the complete development plan for StoryWeaver AI, from in
 
 #### Commands
 ```bash
-# Create project
-npx create-turbo@latest storyweaver-ai
+# Create Next.js project
+npx create-next-app@latest storyweaver-ai --typescript --tailwind --eslint --app --src-dir=false
 cd storyweaver-ai
-
-# Set up Next.js app
-npx create-next-app@latest apps/web --typescript --tailwind --eslint --app --src-dir=false
 
 # Install dev dependencies
 npm install -D prettier eslint-config-prettier husky lint-staged
@@ -44,42 +41,93 @@ npm install -D @types/node @types/react
 npx husky init
 ```
 
-### 0.2 Supabase Setup
+### 0.2 Database & Prisma Setup
 
 #### Tasks
-- [ ] Create Supabase project
-- [ ] Install Supabase CLI
-- [ ] Initialize Supabase in project
-- [ ] Configure local development environment
-- [ ] Set up database migrations folder
-- [ ] Create initial migration with base schema
-- [ ] Configure storage buckets
-- [ ] Set up Row Level Security policies
-- [ ] Test local Supabase instance
+- [ ] Install Prisma CLI
+- [ ] Initialize Prisma
+- [ ] Configure PostgreSQL database (local or cloud)
+- [ ] Create initial Prisma schema
+- [ ] Generate Prisma Client
+- [ ] Create initial migration
+- [ ] Set up database seeding
+- [ ] Create Prisma client singleton
+- [ ] Test database connection
 
 #### Commands
 ```bash
-# Install Supabase CLI
-npm install -D supabase
+# Install Prisma
+npm install -D prisma
+npm install @prisma/client
 
-# Initialize
-npx supabase init
-
-# Start local instance
-npx supabase start
+# Initialize Prisma
+npx prisma init
 
 # Create migration
-npx supabase migration new initial_schema
+npx prisma migrate dev --name init
+
+# Generate client
+npx prisma generate
+
+# Seed database
+npx prisma db seed
+```
+
+#### Initial Prisma Schema
+```prisma
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Base models (will expand in later phases)
+model User {
+  id                String   @id @default(uuid())
+  email             String   @unique
+  emailVerified     DateTime?
+  displayName       String?
+  avatarUrl         String?
+  creditsBalance    Int      @default(100)
+  subscriptionTier  String   @default("free")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("users")
+}
 ```
 
 ### 0.3 External Services Setup
 
 #### Tasks
+- [ ] Set up PostgreSQL database (Supabase/Railway/Neon/local)
+- [ ] Set up Redis instance (Upstash/Railway/local)
 - [ ] Create Anthropic account and get API key
+- [ ] Set up AWS S3 or Cloudinary account
 - [ ] Set up Vercel account
+- [ ] Configure Google OAuth credentials
 - [ ] Configure environment variables locally
 - [ ] Create .env.example file
-- [ ] Test Anthropic API connection
+- [ ] Test all service connections
+
+#### Environment Variables
+```bash
+# .env
+DATABASE_URL="postgresql://user:password@localhost:5432/storyweaver"
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="your-secret-here"
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+ANTHROPIC_API_KEY="your-anthropic-key"
+AWS_ACCESS_KEY_ID="your-aws-key"
+AWS_SECRET_ACCESS_KEY="your-aws-secret"
+AWS_S3_BUCKET="storyweaver-media"
+REDIS_URL="redis://localhost:6379"
+```
 
 ### 0.4 Design System Foundation
 
@@ -97,10 +145,27 @@ npx shadcn@latest init
 npx shadcn@latest add button input card dialog
 ```
 
+### 0.5 Authentication Setup
+
+#### Tasks
+- [ ] Install NextAuth.js (Auth.js)
+- [ ] Configure NextAuth with Google provider
+- [ ] Create auth API route
+- [ ] Set up Prisma adapter for NextAuth
+- [ ] Create auth utilities
+- [ ] Test authentication flow
+
+#### Commands
+```bash
+npm install next-auth @auth/prisma-adapter
+```
+
 ### Milestone 0: ✅ Development Environment Ready
-- Local Supabase running
+- PostgreSQL database running
+- Prisma configured and connected
 - Next.js app building
 - Design system configured
+- Authentication setup
 - All services connected
 
 ---
@@ -112,28 +177,61 @@ npx shadcn@latest add button input card dialog
 ### 1.1 Authentication Implementation
 
 #### Tasks
-- [ ] Configure Supabase Auth with Google OAuth
-- [ ] Create Google OAuth credentials in Google Cloud Console
-- [ ] Implement auth callback handler
+- [ ] Configure NextAuth.js with Google OAuth
+- [ ] Update Prisma schema with NextAuth models
+- [ ] Create migration for auth tables
+- [ ] Implement auth API route handlers
 - [ ] Create login page with Google sign-in button
 - [ ] Create signup flow (redirects to Google)
 - [ ] Implement sign out functionality
 - [ ] Create auth middleware for protected routes
-- [ ] Build auth context/provider
-- [ ] Handle auth state persistence
+- [ ] Handle auth state in client components
 - [ ] Create user profile on first login
 - [ ] Test auth flow end-to-end
 
 #### Files to Create
 ```
 app/(auth)/login/page.tsx
-app/(auth)/callback/route.ts
-lib/supabase/client.ts
-lib/supabase/server.ts
-lib/supabase/middleware.ts
+app/api/auth/[...nextauth]/route.ts
+lib/auth.ts
+lib/prisma.ts
 middleware.ts
 components/auth/login-button.tsx
 components/auth/user-menu.tsx
+```
+
+#### Prisma Schema Addition
+```prisma
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
 ```
 
 ### 1.2 Base Layout & Navigation
@@ -168,9 +266,10 @@ app/error.tsx
 - [ ] Add account section (email, delete account)
 - [ ] Create preferences section
 - [ ] Implement profile update API
-- [ ] Add avatar upload functionality
-- [ ] Handle form validation
+- [ ] Add avatar upload to S3/Cloudinary
+- [ ] Handle form validation with Zod
 - [ ] Show success/error toasts
+- [ ] Implement avatar deletion
 
 ### Milestone 1: ✅ Authentication Complete
 - Users can sign up/in with Google
@@ -187,49 +286,36 @@ app/error.tsx
 ### 2.1 Database: Projects Schema
 
 #### Tasks
-- [ ] Create projects table migration
-- [ ] Set up RLS policies for projects
-- [ ] Create database types generation script
-- [ ] Build project queries/mutations
-- [ ] Test RLS policies
+- [ ] Add Project model to Prisma schema
+- [ ] Create migration for projects table
+- [ ] Generate Prisma client
+- [ ] Create project service/repository
+- [ ] Build project CRUD operations
+- [ ] Add authorization checks
+- [ ] Test project operations
 
-#### Migration
-```sql
--- Create projects table
-CREATE TABLE projects (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  genre TEXT,
-  target_audience TEXT,
-  tone_style TEXT DEFAULT 'conversational',
-  question_rounds INTEGER DEFAULT 3,
-  status TEXT DEFAULT 'active',
-  cover_image_url TEXT,
-  settings JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+#### Prisma Schema Addition
+```prisma
+model Project {
+  id              String    @id @default(uuid())
+  userId          String
+  title           String
+  description     String?
+  genre           String?
+  targetAudience  String?
+  toneStyle       String    @default("conversational")
+  questionRounds  Int       @default(3)
+  status          String    @default("active")
+  coverImageUrl   String?
+  settings        Json      @default("{}")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
--- RLS Policies
-ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-CREATE POLICY "Users can view own projects"
-  ON projects FOR SELECT
-  USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can create projects"
-  ON projects FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own projects"
-  ON projects FOR UPDATE
-  USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own projects"
-  ON projects FOR DELETE
-  USING (auth.uid() = user_id);
+  @@index([userId])
+  @@map("projects")
+}
 ```
 
 ### 2.2 Projects Dashboard
@@ -252,6 +338,7 @@ components/projects/project-card.tsx
 components/projects/project-list.tsx
 components/projects/empty-state.tsx
 lib/hooks/use-projects.ts
+lib/services/projects.ts
 ```
 
 ### 2.3 Create Project Flow
@@ -264,7 +351,7 @@ lib/hooks/use-projects.ts
   - Step 3: Tone & Settings
 - [ ] Implement form validation with Zod
 - [ ] Handle form submission
-- [ ] Create project in database
+- [ ] Create project via API
 - [ ] Redirect to new project page
 - [ ] Add form error handling
 - [ ] Optional: Cover image upload
@@ -302,14 +389,15 @@ lib/hooks/use-project.ts
 ### 2.5 API Routes for Projects
 
 #### Tasks
-- [ ] GET /api/projects - List projects
+- [ ] GET /api/projects - List user's projects
 - [ ] POST /api/projects - Create project
 - [ ] GET /api/projects/[id] - Get project
 - [ ] PATCH /api/projects/[id] - Update project
 - [ ] DELETE /api/projects/[id] - Delete project
 - [ ] Add proper error handling
-- [ ] Validate all inputs
-- [ ] Add response caching where appropriate
+- [ ] Validate all inputs with Zod
+- [ ] Add authorization checks
+- [ ] Implement response caching
 
 ### Milestone 2: ✅ Projects Module Complete
 - Users can create projects
@@ -326,13 +414,96 @@ lib/hooks/use-project.ts
 ### 3.1 Database: Anecdotes Schema
 
 #### Tasks
-- [ ] Create anecdotes table migration
-- [ ] Create media_attachments table migration
-- [ ] Set up RLS policies
-- [ ] Create database types
-- [ ] Build queries/mutations
-- [ ] Set up storage buckets for media
-- [ ] Configure storage policies
+- [ ] Add Anecdote model to Prisma schema
+- [ ] Add MediaAttachment model to Prisma schema
+- [ ] Create migrations
+- [ ] Generate Prisma client
+- [ ] Create anecdote service/repository
+- [ ] Build anecdote CRUD operations
+- [ ] Set up S3/Cloudinary for media storage
+- [ ] Configure storage bucket policies
+
+#### Prisma Schema Addition
+```prisma
+model Anecdote {
+  id                     String    @id @default(uuid())
+  projectId              String
+  userId                 String
+
+  // Core content
+  title                  String?
+  rawContent             String
+  timeFrameStart         DateTime?
+  timeFrameEnd           DateTime?
+  timeFrameApproximate   String?
+  location               String?
+  peopleInvolved         String[]
+  themes                 String[]
+
+  // Processing state
+  status                 String    @default("draft")
+  currentQuestionRound   Int       @default(0)
+
+  // AI-generated content
+  questionnaire          Json      @default("[]")
+  aiRefinedContent       String?
+  aiSummary500           String?
+  aiSummary100           String?
+  aiExtractedThemes      String[]
+  aiSuggestedConnections String[]
+
+  // User feedback on AI content
+  userFeedback           String?
+  refinementIterations   Int       @default(0)
+
+  // Metadata
+  wordCount              Int?
+  estimatedReadingTime   Int?
+  sortOrder              Int?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  lockedAt               DateTime?
+  completedAt            DateTime?
+
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mediaAttachments MediaAttachment[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([status])
+  @@map("anecdotes")
+}
+
+model MediaAttachment {
+  id              String    @id @default(uuid())
+  anecdoteId      String
+  userId          String
+
+  mediaType       String
+  fileUrl         String
+  fileName        String?
+  fileSize        Int?
+  mimeType        String?
+  durationSeconds Int?
+
+  // AI processing
+  transcription   String?
+  aiDescription   String?
+  aiExtractedText String?
+
+  // Metadata
+  caption         String?
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
+
+  anecdote Anecdote @relation(fields: [anecdoteId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@index([anecdoteId])
+  @@map("media_attachments")
+}
+```
 
 ### 3.2 Anecdotes List View
 
@@ -353,13 +524,14 @@ components/anecdotes/anecdote-card.tsx
 components/anecdotes/anecdote-list.tsx
 components/anecdotes/timeline-view.tsx
 lib/hooks/use-anecdotes.ts
+lib/services/anecdotes.ts
 ```
 
 ### 3.3 Anecdote Editor (Stage 1: Initial Entry)
 
 #### Tasks
 - [ ] Create anecdote detail page
-- [ ] Build rich text editor component
+- [ ] Build rich text editor component (TipTap/Slate)
 - [ ] Add time frame picker (date range + approximate)
 - [ ] Implement auto-save functionality
 - [ ] Create "Save Draft" button
@@ -384,6 +556,7 @@ stores/editor-store.ts
 #### Tasks
 - [ ] Create media upload component
 - [ ] Implement drag-and-drop upload
+- [ ] Upload to S3/Cloudinary
 - [ ] Add image preview with lightbox
 - [ ] Build audio recorder component
 - [ ] Create audio player component
@@ -400,17 +573,20 @@ components/anecdotes/media-gallery.tsx
 components/shared/audio-recorder.tsx
 components/shared/audio-player.tsx
 components/shared/image-lightbox.tsx
+lib/storage/s3.ts (or cloudinary.ts)
 lib/utils/media.ts
+app/api/anecdotes/[id]/media/route.ts
 ```
 
 ### 3.5 AI Processing: Question Generation (Stage 2)
 
 #### Tasks
-- [ ] Create Supabase Edge Function for processing
+- [ ] Create API route for anecdote processing
 - [ ] Build AI prompt for anecdote analysis
 - [ ] Implement image analysis with Claude Vision
 - [ ] Generate follow-up questions
 - [ ] Store questions in database
+- [ ] Create background job for processing (Bull + Redis)
 - [ ] Create questionnaire UI component
 - [ ] Build answer input forms
 - [ ] Handle multiple Q&A rounds
@@ -420,9 +596,13 @@ lib/utils/media.ts
 
 #### Files to Create
 ```
-supabase/functions/process-anecdote/index.ts
+app/api/anecdotes/[id]/lock/route.ts
+app/api/anecdotes/[id]/answer/route.ts
+workers/process-anecdote.ts
+lib/ai/client.ts
 lib/ai/prompts.ts
 lib/ai/processors.ts
+lib/queue/jobs.ts
 components/anecdotes/questionnaire.tsx
 components/anecdotes/question-card.tsx
 ```
@@ -457,7 +637,7 @@ Return as JSON: { "questions": [{ "question": "...", "focus_area": "..." }] }
 ### 3.6 AI Processing: Content Refinement (Stage 3)
 
 #### Tasks
-- [ ] Create refinement Edge Function
+- [ ] Create API route for refinement
 - [ ] Build prompt for narrative generation
 - [ ] Compile anecdote + Q&A into single narrative
 - [ ] Create refinement review UI
@@ -465,10 +645,12 @@ Return as JSON: { "questions": [{ "question": "...", "focus_area": "..." }] }
 - [ ] Implement regeneration with feedback
 - [ ] Track refinement iterations
 - [ ] Create diff view (original vs refined)
+- [ ] Queue refinement job
 
 #### Files to Create
 ```
-supabase/functions/refine-anecdote/index.ts
+app/api/anecdotes/[id]/refine/route.ts
+workers/refine-anecdote.ts
 components/anecdotes/refinement-view.tsx
 components/anecdotes/feedback-form.tsx
 components/anecdotes/diff-viewer.tsx
@@ -477,7 +659,7 @@ components/anecdotes/diff-viewer.tsx
 ### 3.7 AI Processing: Summarization (Stage 4)
 
 #### Tasks
-- [ ] Create summarization Edge Function
+- [ ] Create API route for summarization
 - [ ] Generate 500-word comprehensive summary
 - [ ] Generate 100-word quick summary
 - [ ] Extract themes automatically
@@ -488,12 +670,34 @@ components/anecdotes/diff-viewer.tsx
 
 #### Files to Create
 ```
-supabase/functions/summarize-anecdote/index.ts
+app/api/anecdotes/[id]/complete/route.ts
+workers/summarize-anecdote.ts
 components/anecdotes/summary-display.tsx
 components/anecdotes/completion-dialog.tsx
 ```
 
-### 3.8 Anecdote State Machine
+### 3.8 Background Job System
+
+#### Tasks
+- [ ] Set up Bull queue with Redis
+- [ ] Create job processors
+- [ ] Implement job retry logic
+- [ ] Add job status tracking
+- [ ] Create admin job dashboard (optional)
+- [ ] Test job processing
+- [ ] Handle job failures
+
+#### Files to Create
+```
+lib/queue/redis.ts
+lib/queue/jobs.ts
+workers/index.ts
+workers/process-anecdote.ts
+workers/refine-anecdote.ts
+workers/summarize-anecdote.ts
+```
+
+### 3.9 Anecdote State Machine
 
 #### Tasks
 - [ ] Implement state transitions
@@ -525,10 +729,55 @@ draft → locked → questioning → refining → completed
 ### 4.1 Database: Compilations Schema
 
 #### Tasks
-- [ ] Create book_compilations table
-- [ ] Set up RLS policies
-- [ ] Create types and queries
-- [ ] Test policies
+- [ ] Add BookCompilation model to Prisma schema
+- [ ] Create migration
+- [ ] Generate Prisma client
+- [ ] Create compilation service
+- [ ] Test compilation operations
+
+#### Prisma Schema Addition
+```prisma
+model BookCompilation {
+  id                   String    @id @default(uuid())
+  projectId            String
+  userId               String
+
+  // Version info
+  versionNumber        Int
+  versionName          String?
+  commitMessage        String?
+
+  // Content
+  manuscriptContent    String?
+  tableOfContents      Json?
+  chapterStructure     Json?
+  includedAnecdoteIds  String[]
+
+  // AI generation metadata
+  aiModelUsed          String?
+  generationParams     Json?
+
+  // File outputs
+  docxUrl              String?
+  pdfUrl               String?
+  epubUrl              String?
+
+  // Status
+  status               String    @default("generating")
+
+  wordCount            Int?
+  pageCount            Int?
+  createdAt            DateTime  @default(now())
+  publishedAt          DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, versionNumber])
+  @@index([projectId])
+  @@map("book_compilations")
+}
+```
 
 ### 4.2 Compilation Trigger UI
 
@@ -540,6 +789,7 @@ draft → locked → questioning → refining → completed
 - [ ] Add compilation settings (chapter grouping, etc.)
 - [ ] Create "Start Compilation" button
 - [ ] Show processing state
+- [ ] Poll for completion status
 
 #### Files to Create
 ```
@@ -552,7 +802,8 @@ components/compilation/compile-button.tsx
 ### 4.3 AI Book Compilation
 
 #### Tasks
-- [ ] Create compilation Edge Function
+- [ ] Create API route for compilation
+- [ ] Create background job for compilation
 - [ ] Load all selected anecdotes with summaries
 - [ ] Build comprehensive compilation prompt
 - [ ] Generate chapter structure
@@ -563,9 +814,15 @@ components/compilation/compile-button.tsx
 - [ ] Handle credit deduction
 - [ ] Store compiled manuscript
 
-#### Edge Function
+#### Files to Create
+```
+app/api/projects/[id]/compile/route.ts
+workers/compile-book.ts
+lib/ai/compilation-prompts.ts
+```
+
+#### Compilation Prompt Structure
 ```typescript
-// supabase/functions/compile-book/index.ts
 const compilationPrompt = `
 You are a skilled ghostwriter compiling a memoir from collected anecdotes.
 
@@ -579,8 +836,8 @@ ANECDOTES (in chronological order):
 ${anecdotes.map((a, i) => `
 ### Anecdote ${i + 1}: ${a.title || 'Untitled'}
 TIME: ${a.time_frame}
-SUMMARY (500 words): ${a.ai_summary_500}
-FULL TEXT: ${a.ai_refined_content}
+SUMMARY (500 words): ${a.aiSummary500}
+FULL TEXT: ${a.aiRefinedContent}
 `).join('\n---\n')}
 
 Create a complete book manuscript that:
@@ -620,6 +877,7 @@ Format the output as:
 
 #### Files to Create
 ```
+app/(dashboard)/projects/[projectId]/compilations/[compilationId]/page.tsx
 components/compilation/manuscript-viewer.tsx
 components/compilation/chapter-nav.tsx
 components/compilation/feedback-sidebar.tsx
@@ -642,24 +900,31 @@ components/compilation/inline-editor.tsx
 components/compilation/version-history.tsx
 components/compilation/version-compare.tsx
 components/compilation/save-version-dialog.tsx
+app/api/compilations/[id]/feedback/route.ts
+app/api/compilations/[id]/regenerate/route.ts
 ```
 
 ### 4.6 Export Functionality
 
 #### Tasks
+- [ ] Install document generation libraries (docx, pdfkit)
+- [ ] Create export API route
 - [ ] Implement DOCX export
 - [ ] Implement PDF export
 - [ ] Implement EPUB export (stretch)
 - [ ] Create export options UI
-- [ ] Handle export processing
+- [ ] Handle export processing as background job
+- [ ] Upload exports to S3/Cloudinary
 - [ ] Provide download links
 - [ ] Track exports
 
 #### Files to Create
 ```
-supabase/functions/export-book/index.ts
+app/api/compilations/[id]/export/route.ts
+workers/export-book.ts
+lib/utils/export-docx.ts
+lib/utils/export-pdf.ts
 components/compilation/export-dialog.tsx
-lib/utils/export.ts
 ```
 
 ### Milestone 4: ✅ Book Compilation Complete
@@ -677,11 +942,54 @@ lib/utils/export.ts
 ### 5.1 Database: Credits Schema
 
 #### Tasks
-- [ ] Create user_credits table
-- [ ] Create ai_interactions table
-- [ ] Add credits_balance to users
-- [ ] Set up RLS policies
-- [ ] Create credit transaction functions
+- [ ] Add UserCredit model to Prisma schema
+- [ ] Add AIInteraction model to Prisma schema
+- [ ] Update User model with credits_balance
+- [ ] Create migrations
+- [ ] Create credit service
+- [ ] Build credit transaction functions
+
+#### Prisma Schema Addition
+```prisma
+model AIInteraction {
+  id               String    @id @default(uuid())
+  userId           String
+  anecdoteId       String?
+  compilationId    String?
+
+  interactionType  String
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  creditsUsed      Int?
+  modelUsed        String?
+  latencyMs        Int?
+
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ai_interactions")
+}
+
+model UserCredit {
+  id              String    @id @default(uuid())
+  userId          String
+  amount          Int
+  transactionType String
+  description     String?
+  referenceId     String?
+  balanceAfter    Int
+  createdAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("user_credits")
+}
+```
 
 ### 5.2 Credits Display & Management
 
@@ -692,6 +1000,7 @@ lib/utils/export.ts
 - [ ] Show usage breakdown by type
 - [ ] Create low balance warning
 - [ ] Build credits purchase UI
+- [ ] Add usage analytics charts
 
 #### Files to Create
 ```
@@ -700,38 +1009,50 @@ components/credits/balance-display.tsx
 components/credits/transaction-history.tsx
 components/credits/usage-chart.tsx
 components/credits/purchase-dialog.tsx
+lib/hooks/use-credits.ts
 ```
 
 ### 5.3 Credit Deduction System
 
 #### Tasks
-- [ ] Create credit check before AI operations
+- [ ] Create credit check middleware
 - [ ] Implement atomic credit deduction
 - [ ] Log all AI interactions
 - [ ] Handle insufficient credits gracefully
 - [ ] Create cost preview before operations
 - [ ] Implement refund for failed operations
+- [ ] Add credit consumption to all AI operations
 
 #### Files to Create
 ```
 lib/credits/check-balance.ts
 lib/credits/deduct-credits.ts
 lib/credits/costs.ts
+lib/credits/transactions.ts
 ```
 
 ### 5.4 Payment Integration (Optional for MVP)
 
 #### Tasks
 - [ ] Set up Stripe account
+- [ ] Install Stripe SDK
 - [ ] Create Stripe webhook handler
 - [ ] Build credit purchase flow
 - [ ] Implement subscription tiers (future)
 - [ ] Handle payment success/failure
-- [ ] Send purchase receipts
+- [ ] Send purchase receipts via email
+
+#### Files to Create
+```
+app/api/payments/checkout/route.ts
+app/api/webhooks/stripe/route.ts
+lib/stripe/client.ts
+```
 
 ### Milestone 5: ✅ Monetization Ready
 - Credits displayed and tracked
 - AI operations deduct credits
+- Transaction history visible
 - Purchase flow functional (or manual for MVP)
 
 ---
@@ -743,8 +1064,12 @@ lib/credits/costs.ts
 ### 6.1 Testing Suite
 
 #### Tasks
+- [ ] Set up Vitest for unit tests
 - [ ] Write unit tests for utilities
+- [ ] Write tests for services/repositories
+- [ ] Set up React Testing Library
 - [ ] Write component tests for key components
+- [ ] Set up Playwright for E2E tests
 - [ ] Create E2E tests for critical flows
   - User signup/login
   - Create project
@@ -762,21 +1087,23 @@ lib/credits/costs.ts
 - [ ] Run Lighthouse audits
 - [ ] Optimize images (next/image)
 - [ ] Implement code splitting
-- [ ] Add caching strategies
-- [ ] Optimize database queries
+- [ ] Add caching strategies (React Query)
+- [ ] Optimize database queries (Prisma)
 - [ ] Add database indexes
 - [ ] Implement request deduplication
 - [ ] Lazy load heavy components
+- [ ] Optimize bundle size
 
 ### 6.3 Error Handling & Logging
 
 #### Tasks
 - [ ] Implement global error boundary
-- [ ] Add Sentry error tracking (optional)
+- [ ] Add Sentry error tracking
 - [ ] Create user-friendly error messages
 - [ ] Build retry mechanisms for AI calls
 - [ ] Log critical errors to database
 - [ ] Create admin error dashboard (future)
+- [ ] Add monitoring alerts
 
 ### 6.4 SEO & Meta
 
@@ -787,6 +1114,7 @@ lib/credits/costs.ts
 - [ ] Add robots.txt
 - [ ] Create landing page (if not done)
 - [ ] Write compelling copy
+- [ ] Optimize for Core Web Vitals
 
 ### 6.5 Documentation
 
@@ -797,18 +1125,22 @@ lib/credits/costs.ts
 - [ ] Create onboarding flow/tutorial
 - [ ] Write API documentation
 - [ ] Create contributor guidelines
+- [ ] Document deployment process
 
 ### 6.6 Deployment
 
 #### Tasks
-- [ ] Configure production Supabase
+- [ ] Set up production PostgreSQL database
+- [ ] Configure production Redis instance
 - [ ] Set production environment variables
-- [ ] Deploy Edge Functions
+- [ ] Run database migrations in production
 - [ ] Deploy to Vercel
+- [ ] Deploy background workers (Railway/Render)
 - [ ] Configure custom domain
 - [ ] Set up SSL certificate
 - [ ] Configure CDN
 - [ ] Set up monitoring/alerts
+- [ ] Configure backup strategy
 
 ### 6.7 Launch Checklist
 
@@ -816,8 +1148,8 @@ lib/credits/costs.ts
 - [ ] No console errors in production build
 - [ ] All environment variables configured
 - [ ] Database migrations applied
-- [ ] Storage buckets configured
-- [ ] RLS policies verified
+- [ ] S3/Cloudinary buckets configured
+- [ ] Background workers running
 - [ ] Credits system tested
 - [ ] Export functionality working
 - [ ] Email notifications working (if any)
@@ -874,8 +1206,10 @@ lib/credits/costs.ts
 | AI API rate limits | Implement queuing, caching, backoff |
 | High AI costs | Optimize prompts, set user limits |
 | Data loss | Regular backups, version control |
-| Security breach | RLS, encryption, auditing |
+| Security breach | Input validation, encryption, auditing |
 | Performance issues | Load testing, monitoring, CDN |
+| Database connection limits | Connection pooling (Prisma) |
+| Background job failures | Retry logic, dead letter queues |
 
 ### Business Risks
 
@@ -899,11 +1233,13 @@ lib/credits/costs.ts
 
 | Service | Free Tier | Growth |
 |---------|-----------|--------|
-| Supabase | $0 | $25+ |
+| PostgreSQL (Supabase/Neon) | $0 | $25+ |
+| Redis (Upstash) | $0 | $10+ |
 | Vercel | $0 | $20+ |
+| S3 / Cloudinary | $0-5 | $10-50+ |
 | Anthropic | Pay-per-use | $50-500+ |
 | Domain | $12/year | $12/year |
-| Total | ~$5/month | $100-600/month |
+| **Total** | ~$5/month | $120-600/month |
 
 ### Time Investment (Solo Developer)
 - Phase 0: 3-5 days
@@ -956,6 +1292,8 @@ lib/credits/costs.ts
 - [ ] Mobile responsive
 - [ ] Accessibility checked
 - [ ] No console warnings
+- [ ] Authorization checks in place
+- [ ] Database queries optimized
 
 ---
 
@@ -966,8 +1304,9 @@ lib/credits/costs.ts
 2. Set up development environment (Phase 0)
 3. Create GitHub repository
 4. Initialize project structure
-5. Configure Supabase
-6. Start Phase 1
+5. Configure PostgreSQL and Prisma
+6. Set up NextAuth.js
+7. Start Phase 1
 
 ### First Week Goals
 - Complete Phase 0 and Phase 1
@@ -981,10 +1320,12 @@ lib/credits/costs.ts
 
 ### Useful Resources
 - [Next.js Documentation](https://nextjs.org/docs)
-- [Supabase Documentation](https://supabase.com/docs)
+- [Prisma Documentation](https://www.prisma.io/docs)
+- [NextAuth.js Documentation](https://next-auth.js.org)
 - [Anthropic API Reference](https://docs.anthropic.com)
 - [Tailwind CSS](https://tailwindcss.com/docs)
 - [shadcn/ui](https://ui.shadcn.com)
+- [Bull Documentation](https://docs.bullmq.io/)
 
 ### Inspiration & References
 - Notion (UI patterns)
@@ -998,6 +1339,6 @@ lib/credits/costs.ts
 
 ---
 
-**Created**: November 2025  
-**Last Updated**: November 2025  
-**Version**: 1.0
+**Created**: November 2025
+**Last Updated**: November 2025
+**Version**: 2.0 (Node.js + Prisma + PostgreSQL)

@@ -32,234 +32,318 @@ Traditional ghostwriting is expensive and quality varies significantly. StoryWea
 - **File Upload**: react-dropzone with image optimization
 
 #### Backend
-- **Platform**: Supabase (PostgreSQL + Auth + Storage + Edge Functions)
-- **API Layer**: Supabase Edge Functions (Deno runtime)
+- **Runtime**: Node.js 20+ (LTS)
+- **Framework**: Express.js with TypeScript
+- **Database**: PostgreSQL 15+
+- **ORM**: Prisma (type-safe database access)
+- **Authentication**: NextAuth.js (Auth.js) with Google OAuth
 - **AI Integration**: Anthropic Claude API (claude-sonnet-4-20250514)
-- **File Storage**: Supabase Storage buckets for media
-- **Real-time**: Supabase Realtime for collaborative features (future)
+- **File Storage**: AWS S3 or Cloudinary for media files
+- **Background Jobs**: Bull (Redis-based queue) for async processing
+- **Validation**: Zod for request/response validation
 
 #### Infrastructure
-- **Hosting**: Vercel (frontend) + Supabase (backend)
+- **Hosting**:
+  - Frontend: Vercel
+  - Backend API: Railway / Render / DigitalOcean
+  - Database: Supabase (PostgreSQL only) / Railway / Neon
 - **CDN**: Vercel Edge Network
+- **Cache**: Redis (for sessions and job queues)
+- **File Storage**: AWS S3 / Cloudinary
 - **Version Control**: Git with GitHub
 - **CI/CD**: GitHub Actions
-- **Monitoring**: Vercel Analytics + Supabase Dashboard
+- **Monitoring**: Vercel Analytics + Sentry + Prometheus/Grafana
 
 ---
 
-## Database Schema
+## Database Schema (Prisma)
 
-### Tables
+### Prisma Schema
 
-#### `users`
-```sql
-CREATE TABLE users (
-  id UUID PRIMARY KEY REFERENCES auth.users(id),
-  email TEXT NOT NULL UNIQUE,
-  display_name TEXT,
-  avatar_url TEXT,
-  credits_balance INTEGER DEFAULT 100,
-  subscription_tier TEXT DEFAULT 'free',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
+```prisma
+// prisma/schema.prisma
 
-#### `projects`
-```sql
-CREATE TABLE projects (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  genre TEXT,
-  target_audience TEXT,
-  tone_style TEXT DEFAULT 'conversational',
-  question_rounds INTEGER DEFAULT 3,
-  status TEXT DEFAULT 'active',
-  cover_image_url TEXT,
-  settings JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+generator client {
+  provider = "prisma-client-js"
+}
 
-CREATE INDEX idx_projects_user_id ON projects(user_id);
-```
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
 
-#### `anecdotes`
-```sql
-CREATE TABLE anecdotes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  
-  -- Core content
-  title TEXT,
-  raw_content TEXT NOT NULL,
-  time_frame_start DATE,
-  time_frame_end DATE,
-  time_frame_approximate TEXT,
-  location TEXT,
-  people_involved TEXT[],
-  themes TEXT[],
-  
-  -- Processing state
-  status TEXT DEFAULT 'draft',
-  -- Possible values: 'draft', 'locked', 'questioning', 'refining', 'completed'
-  current_question_round INTEGER DEFAULT 0,
-  
-  -- AI-generated content
-  questionnaire JSONB DEFAULT '[]',
-  ai_refined_content TEXT,
-  ai_summary_500 TEXT,
-  ai_summary_100 TEXT,
-  ai_extracted_themes TEXT[],
-  ai_suggested_connections UUID[],
-  
-  -- User feedback on AI content
-  user_feedback TEXT,
-  refinement_iterations INTEGER DEFAULT 0,
-  
-  -- Metadata
-  word_count INTEGER,
-  estimated_reading_time INTEGER,
-  sort_order INTEGER,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  locked_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ
-);
+model User {
+  id                String            @id @default(uuid())
+  email             String            @unique
+  emailVerified     DateTime?
+  displayName       String?
+  avatarUrl         String?
+  creditsBalance    Int               @default(100)
+  subscriptionTier  String            @default("free")
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
-CREATE INDEX idx_anecdotes_project_id ON anecdotes(project_id);
-CREATE INDEX idx_anecdotes_status ON anecdotes(status);
-CREATE INDEX idx_anecdotes_time_frame ON anecdotes(time_frame_start, time_frame_end);
-```
+  // Relations
+  accounts          Account[]
+  sessions          Session[]
+  projects          Project[]
+  anecdotes         Anecdote[]
+  mediaAttachments  MediaAttachment[]
+  bookCompilations  BookCompilation[]
+  aiInteractions    AIInteraction[]
+  creditTransactions UserCredit[]
 
-#### `media_attachments`
-```sql
-CREATE TABLE media_attachments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  anecdote_id UUID NOT NULL REFERENCES anecdotes(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES users(id),
-  
-  media_type TEXT NOT NULL,
-  -- Possible values: 'image', 'audio', 'video', 'document'
-  file_url TEXT NOT NULL,
-  file_name TEXT,
-  file_size INTEGER,
-  mime_type TEXT,
-  duration_seconds INTEGER,
-  
-  -- AI processing
-  transcription TEXT,
-  ai_description TEXT,
-  ai_extracted_text TEXT,
-  
-  -- Metadata
-  caption TEXT,
-  sort_order INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+  @@map("users")
+}
 
-CREATE INDEX idx_media_anecdote_id ON media_attachments(anecdote_id);
-```
+// NextAuth.js models
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
 
-#### `book_compilations`
-```sql
-CREATE TABLE book_compilations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES users(id),
-  
-  -- Version info
-  version_number INTEGER NOT NULL,
-  version_name TEXT,
-  commit_message TEXT,
-  
-  -- Content
-  manuscript_content TEXT,
-  table_of_contents JSONB,
-  chapter_structure JSONB,
-  included_anecdote_ids UUID[],
-  
-  -- AI generation metadata
-  ai_model_used TEXT,
-  generation_params JSONB,
-  
-  -- File outputs
-  docx_url TEXT,
-  pdf_url TEXT,
-  epub_url TEXT,
-  
-  -- Status
-  status TEXT DEFAULT 'generating',
-  -- Possible values: 'generating', 'draft', 'review', 'published'
-  
-  word_count INTEGER,
-  page_count INTEGER,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  published_at TIMESTAMPTZ
-);
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-CREATE INDEX idx_compilations_project_id ON book_compilations(project_id);
-CREATE UNIQUE INDEX idx_compilations_version ON book_compilations(project_id, version_number);
-```
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
 
-#### `ai_interactions`
-```sql
-CREATE TABLE ai_interactions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id),
-  anecdote_id UUID REFERENCES anecdotes(id),
-  compilation_id UUID REFERENCES book_compilations(id),
-  
-  interaction_type TEXT NOT NULL,
-  -- Possible values: 'question_generation', 'content_refinement', 'summarization', 'book_compilation', 'image_analysis'
-  
-  prompt_tokens INTEGER,
-  completion_tokens INTEGER,
-  total_tokens INTEGER,
-  credits_used INTEGER,
-  
-  model_used TEXT,
-  latency_ms INTEGER,
-  
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
 
-CREATE INDEX idx_ai_interactions_user_id ON ai_interactions(user_id);
-CREATE INDEX idx_ai_interactions_created_at ON ai_interactions(created_at);
-```
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-#### `user_credits`
-```sql
-CREATE TABLE user_credits (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id),
-  
-  amount INTEGER NOT NULL,
-  transaction_type TEXT NOT NULL,
-  -- Possible values: 'purchase', 'usage', 'bonus', 'refund'
-  
-  description TEXT,
-  reference_id UUID,
-  balance_after INTEGER,
-  
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+  @@map("sessions")
+}
 
-CREATE INDEX idx_credits_user_id ON user_credits(user_id);
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Project {
+  id              String    @id @default(uuid())
+  userId          String
+  title           String
+  description     String?
+  genre           String?
+  targetAudience  String?
+  toneStyle       String    @default("conversational")
+  questionRounds  Int       @default(3)
+  status          String    @default("active")
+  coverImageUrl   String?
+  settings        Json      @default("{}")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  anecdotes        Anecdote[]
+  bookCompilations BookCompilation[]
+
+  @@index([userId])
+  @@map("projects")
+}
+
+model Anecdote {
+  id                     String    @id @default(uuid())
+  projectId              String
+  userId                 String
+
+  // Core content
+  title                  String?
+  rawContent             String
+  timeFrameStart         DateTime?
+  timeFrameEnd           DateTime?
+  timeFrameApproximate   String?
+  location               String?
+  peopleInvolved         String[]
+  themes                 String[]
+
+  // Processing state
+  status                 String    @default("draft") // 'draft', 'locked', 'questioning', 'refining', 'completed'
+  currentQuestionRound   Int       @default(0)
+
+  // AI-generated content
+  questionnaire          Json      @default("[]")
+  aiRefinedContent       String?
+  aiSummary500           String?
+  aiSummary100           String?
+  aiExtractedThemes      String[]
+  aiSuggestedConnections String[]  // Array of Anecdote IDs
+
+  // User feedback on AI content
+  userFeedback           String?
+  refinementIterations   Int       @default(0)
+
+  // Metadata
+  wordCount              Int?
+  estimatedReadingTime   Int?
+  sortOrder              Int?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  lockedAt               DateTime?
+  completedAt            DateTime?
+
+  // Relations
+  project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mediaAttachments MediaAttachment[]
+  aiInteractions   AIInteraction[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([status])
+  @@index([timeFrameStart, timeFrameEnd])
+  @@map("anecdotes")
+}
+
+model MediaAttachment {
+  id              String    @id @default(uuid())
+  anecdoteId      String
+  userId          String
+
+  mediaType       String    // 'image', 'audio', 'video', 'document'
+  fileUrl         String
+  fileName        String?
+  fileSize        Int?
+  mimeType        String?
+  durationSeconds Int?
+
+  // AI processing
+  transcription   String?
+  aiDescription   String?
+  aiExtractedText String?
+
+  // Metadata
+  caption         String?
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
+
+  // Relations
+  anecdote Anecdote @relation(fields: [anecdoteId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@index([anecdoteId])
+  @@map("media_attachments")
+}
+
+model BookCompilation {
+  id                   String    @id @default(uuid())
+  projectId            String
+  userId               String
+
+  // Version info
+  versionNumber        Int
+  versionName          String?
+  commitMessage        String?
+
+  // Content
+  manuscriptContent    String?
+  tableOfContents      Json?
+  chapterStructure     Json?
+  includedAnecdoteIds  String[]
+
+  // AI generation metadata
+  aiModelUsed          String?
+  generationParams     Json?
+
+  // File outputs
+  docxUrl              String?
+  pdfUrl               String?
+  epubUrl              String?
+
+  // Status
+  status               String    @default("generating") // 'generating', 'draft', 'review', 'published'
+
+  wordCount            Int?
+  pageCount            Int?
+  createdAt            DateTime  @default(now())
+  publishedAt          DateTime?
+
+  // Relations
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id])
+  aiInteractions AIInteraction[]
+
+  @@unique([projectId, versionNumber])
+  @@index([projectId])
+  @@map("book_compilations")
+}
+
+model AIInteraction {
+  id               String    @id @default(uuid())
+  userId           String
+  anecdoteId       String?
+  compilationId    String?
+
+  interactionType  String    // 'question_generation', 'content_refinement', 'summarization', 'book_compilation', 'image_analysis'
+
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  creditsUsed      Int?
+
+  modelUsed        String?
+  latencyMs        Int?
+
+  createdAt        DateTime  @default(now())
+
+  // Relations
+  user        User             @relation(fields: [userId], references: [id])
+  anecdote    Anecdote?        @relation(fields: [anecdoteId], references: [id])
+  compilation BookCompilation? @relation(fields: [compilationId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ai_interactions")
+}
+
+model UserCredit {
+  id              String    @id @default(uuid())
+  userId          String
+
+  amount          Int
+  transactionType String    // 'purchase', 'usage', 'bonus', 'refund'
+
+  description     String?
+  referenceId     String?
+  balanceAfter    Int
+
+  createdAt       DateTime  @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("user_credits")
+}
 ```
 
 ---
 
 ## API Endpoints
 
-### Authentication
-- `POST /auth/signup` - Register with Google OAuth
-- `POST /auth/signin` - Sign in with Google OAuth
-- `POST /auth/signout` - Sign out
-- `GET /auth/session` - Get current session
+### Authentication (NextAuth.js)
+- `GET /api/auth/[...nextauth]` - NextAuth.js handlers (signin, signout, callback, etc.)
+- `GET /api/auth/session` - Get current session
+- `POST /api/auth/signin` - Initiate Google OAuth signin
 
 ### Projects
 - `GET /api/projects` - List user's projects
@@ -311,7 +395,7 @@ When user locks an anecdote, the system:
    - Parse raw anecdote text
    - Identify key elements: people, places, emotions, events
    - Detect narrative gaps and unclear areas
-   
+
 2. **Image Analysis** (if images attached)
    - Send images to Claude with vision capabilities
    - Extract contextual details
@@ -425,8 +509,9 @@ storyweaver-ai/
 │   └── workflows/
 │       ├── ci.yml
 │       └── deploy.yml
+│
 ├── apps/
-│   └── web/
+│   └── web/                      # Next.js frontend
 │       ├── app/
 │       │   ├── (auth)/
 │       │   │   ├── login/
@@ -443,6 +528,8 @@ storyweaver-ai/
 │       │   │   ├── credits/
 │       │   │   └── settings/
 │       │   ├── api/
+│       │   │   ├── auth/
+│       │   │   │   └── [...nextauth]/
 │       │   │   ├── projects/
 │       │   │   ├── anecdotes/
 │       │   │   ├── media/
@@ -476,14 +563,21 @@ storyweaver-ai/
 │       │       ├── image-gallery.tsx
 │       │       └── loading-states.tsx
 │       ├── lib/
-│       │   ├── supabase/
-│       │   │   ├── client.ts
-│       │   │   ├── server.ts
-│       │   │   └── middleware.ts
+│       │   ├── prisma.ts            # Prisma client singleton
+│       │   ├── auth.ts              # NextAuth.js configuration
+│       │   ├── api/
+│       │   │   ├── client.ts        # API client for frontend
+│       │   │   └── server.ts        # Server-side API helpers
 │       │   ├── ai/
 │       │   │   ├── client.ts
 │       │   │   ├── prompts.ts
 │       │   │   └── processors.ts
+│       │   ├── storage/
+│       │   │   ├── s3.ts           # S3 or Cloudinary client
+│       │   │   └── upload.ts
+│       │   ├── queue/
+│       │   │   ├── redis.ts        # Redis client
+│       │   │   └── jobs.ts         # Bull queue definitions
 │       │   ├── utils/
 │       │   │   ├── format.ts
 │       │   │   ├── validation.ts
@@ -507,28 +601,34 @@ storyweaver-ai/
 │       ├── tailwind.config.js
 │       ├── tsconfig.json
 │       └── package.json
+│
 ├── packages/
 │   └── shared/
 │       ├── types/
 │       └── utils/
-├── supabase/
-│   ├── functions/
-│   │   ├── process-anecdote/
-│   │   ├── compile-book/
-│   │   └── transcribe-audio/
-│   ├── migrations/
-│   │   ├── 001_initial_schema.sql
-│   │   ├── 002_add_compilations.sql
+│
+├── prisma/
+│   ├── schema.prisma              # Main Prisma schema
+│   ├── migrations/                # Database migrations
 │   │   └── ...
-│   └── seed.sql
+│   └── seed.ts                    # Database seeding
+│
+├── workers/                        # Background job processors
+│   ├── process-anecdote.ts
+│   ├── compile-book.ts
+│   ├── transcribe-audio.ts
+│   └── index.ts
+│
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── API.md
 │   └── DEPLOYMENT.md
+│
 ├── CLAUDE.md
 ├── MASTERPLAN.md
 ├── README.md
 ├── package.json
+├── tsconfig.json
 └── turbo.json
 ```
 
@@ -536,29 +636,45 @@ storyweaver-ai/
 
 ## Environment Variables
 
-### Frontend (.env.local)
+### Frontend & Backend (.env)
 ```bash
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/storyweaver?schema=public"
+
+# NextAuth.js
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your_nextauth_secret
+
+# Google OAuth
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+# AI
+ANTHROPIC_API_KEY=your_anthropic_key
+
+# File Storage (AWS S3)
+AWS_ACCESS_KEY_ID=your_aws_access_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+AWS_REGION=us-east-1
+AWS_S3_BUCKET=storyweaver-media
+
+# Or Cloudinary
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+# Redis (for Bull queue)
+REDIS_URL=redis://localhost:6379
+
+# External Services
+ASSEMBLY_AI_KEY=your_assemblyai_key  # for transcription
 
 # App
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 # Analytics (optional)
 NEXT_PUBLIC_POSTHOG_KEY=your_posthog_key
-```
-
-### Backend (Supabase Edge Functions)
-```bash
-# AI
-ANTHROPIC_API_KEY=your_anthropic_key
-
-# Storage
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-
-# External Services
-ASSEMBLY_AI_KEY=your_assemblyai_key  # for transcription
+SENTRY_DSN=your_sentry_dsn
 ```
 
 ---
@@ -573,8 +689,19 @@ ASSEMBLY_AI_KEY=your_assemblyai_key  # for transcription
 - Prefer functional components with hooks
 - Use server components by default, client only when needed
 - Keep components small and focused
-- Extract business logic to custom hooks
+- Extract business logic to custom hooks or services
 - Use Zod for all runtime validation
+- Use Prisma for all database operations
+
+### Prisma Best Practices
+
+- Always use transactions for multi-step operations
+- Use `include` and `select` to optimize queries
+- Leverage Prisma middleware for logging and auditing
+- Keep migrations in version control
+- Use `prisma generate` after schema changes
+- Run `prisma migrate dev` in development
+- Run `prisma migrate deploy` in production
 
 ### Git Workflow
 
@@ -594,7 +721,8 @@ ASSEMBLY_AI_KEY=your_assemblyai_key  # for transcription
 - Unit tests: Vitest for utilities and hooks
 - Component tests: React Testing Library
 - E2E tests: Playwright for critical flows
-- API tests: Supertest for edge functions
+- API tests: Jest/Supertest for API routes
+- Database tests: Use separate test database
 
 ### Performance Targets
 
@@ -602,28 +730,33 @@ ASSEMBLY_AI_KEY=your_assemblyai_key  # for transcription
 - First Contentful Paint < 1.5s
 - Time to Interactive < 3s
 - Core Web Vitals in green
+- API response time < 200ms (p95)
 
 ---
 
 ## Security Considerations
 
 ### Authentication
-- Google OAuth only (no password management)
-- JWT tokens with short expiry
+- Google OAuth via NextAuth.js
+- JWT tokens with short expiry (configurable)
 - Refresh token rotation
 - Session invalidation on logout
+- CSRF protection via NextAuth.js
 
 ### Data Protection
-- Row Level Security (RLS) on all tables
+- Database-level constraints via Prisma
+- Row-level access control in API layer
 - User can only access own data
 - Encrypted storage for sensitive content
 - HTTPS everywhere
+- Environment variables for secrets
 
 ### API Security
-- Rate limiting on all endpoints
+- Rate limiting on all endpoints (express-rate-limit)
 - Input validation with Zod
 - CORS configuration
-- CSRF protection
+- Helmet.js for security headers
+- SQL injection protection via Prisma
 
 ### Content Safety
 - AI content moderation for generated text
@@ -657,28 +790,39 @@ ASSEMBLY_AI_KEY=your_assemblyai_key  # for transcription
 ## Deployment
 
 ### Prerequisites
-- Vercel account
-- Supabase project
+- Vercel account (frontend)
+- Railway/Render account (backend) or use Vercel for full-stack
+- PostgreSQL database (Supabase/Railway/Neon)
+- Redis instance (Upstash/Railway)
+- AWS S3 or Cloudinary account
 - Anthropic API key
 
 ### Deployment Steps
 
-1. **Supabase Setup**
+1. **Database Setup**
    ```bash
-   supabase init
-   supabase db push
-   supabase functions deploy
+   # Set DATABASE_URL in environment
+   npx prisma migrate deploy
+   npx prisma generate
+   npx prisma db seed
    ```
 
-2. **Vercel Deployment**
+2. **Vercel Deployment (Full-stack)**
    - Connect GitHub repository
    - Configure environment variables
    - Deploy
+   - Vercel will handle both frontend and API routes
 
-3. **Post-Deployment**
+3. **Background Workers**
+   - Deploy workers separately to Railway/Render
+   - Or use Vercel Cron Jobs for simpler tasks
+   - Configure Redis connection
+
+4. **Post-Deployment**
    - Configure custom domain
-   - Set up monitoring
+   - Set up monitoring (Sentry)
    - Enable analytics
+   - Test all integrations
 
 ---
 
@@ -693,12 +837,14 @@ ASSEMBLY_AI_KEY=your_assemblyai_key  # for transcription
 - Credit usage patterns
 - AI processing latency
 - Error rates
+- Database query performance
 
 ### Tools
 - Vercel Analytics for web vitals
-- Supabase Dashboard for database metrics
+- Sentry for error tracking
+- Prisma logging for slow queries
 - Custom dashboard for business metrics
-- Error tracking with Sentry (optional)
+- Prometheus + Grafana (optional, for advanced monitoring)
 
 ---
 
