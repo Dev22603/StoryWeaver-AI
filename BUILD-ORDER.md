@@ -49,7 +49,7 @@ Every AI operation costs credits. You need the billing logic working before the 
 | Task | Priority |
 |------|----------|
 | Database schema (all tables) | ✅ Critical |
-| Authentication (Supabase Auth) | ✅ Critical |
+| Authentication (NextAuth.js) | ✅ Critical |
 | Basic API structure | ✅ Critical |
 | Next.js project scaffold with routing | ✅ Critical |
 
@@ -179,12 +179,11 @@ In that case, use mock data and build the happy path UI, then backfill with real
 # Create project
 npx create-next-app@latest storyweaver-ai --typescript --tailwind --app
 
-# Initialize Supabase
-npx supabase init
-npx supabase start
+# Initialize Prisma
+npx prisma init
 
 # Create first migration
-npx supabase migration new initial_schema
+npx prisma migrate dev --name initial_schema
 
 # Test Anthropic connection
 pip install anthropic
@@ -195,10 +194,10 @@ python test_ai.py
 
 ```bash
 # Apply migrations
-npx supabase db push
+npx prisma migrate dev
 
 # Generate types
-npx supabase gen types typescript --local > types/database.ts
+npx prisma generate
 ```
 
 ### Day 3: First API Endpoints
@@ -220,7 +219,7 @@ curl http://localhost:3000/api/projects
 |------|------------|
 | AI quality is poor | Test prompts extensively in Week 2 before UI |
 | Schema changes needed | Keep frontend on mocks until schema is stable |
-| Auth complexity | Use Supabase Auth to avoid building from scratch |
+| Auth complexity | Use NextAuth.js with Google OAuth to avoid building from scratch |
 | Scope creep | Stick to MVP features only in first 4 weeks |
 
 ---

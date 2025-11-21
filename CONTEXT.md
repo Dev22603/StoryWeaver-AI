@@ -11,10 +11,13 @@
 ## Tech Stack
 
 - **Frontend**: Next.js 14 (App Router), TypeScript, Tailwind CSS, Zustand, React Query
-- **Backend**: Supabase (PostgreSQL, Auth, Storage, Edge Functions)
+- **Backend**: Node.js + Express + Prisma ORM + PostgreSQL
+- **Auth**: NextAuth.js (Auth.js) with Google OAuth
 - **AI**: Anthropic Claude API (claude-sonnet-4-20250514)
-- **Vector DB**: Supabase pgvector (for RAG)
-- **Hosting**: Vercel + Supabase
+- **Vector DB**: PostgreSQL with pgvector extension
+- **Background Jobs**: Bull + Redis
+- **File Storage**: AWS S3 or Cloudinary
+- **Hosting**: Vercel (frontend) + Railway/Render (backend)
 
 ---
 
@@ -178,15 +181,17 @@ apps/web/
 │   └── api/projects, anecdotes, compile, rag
 ├── components/ui, features, shared
 ├── hooks/use-project, use-anecdote
-├── lib/supabase, ai, utils
+├── lib/prisma, auth, ai, utils
 ├── stores/
 └── types/
 
-supabase/
-├── functions/process-anecdote, compile-book
+prisma/
+├── schema.prisma
 └── migrations/
 
-services/api/ (if FastAPI/Express)
+workers/
+├── process-anecdote.ts
+└── compile-book.ts
 ```
 
 ---
@@ -209,12 +214,13 @@ services/api/ (if FastAPI/Express)
 ## Development Commands
 
 ```bash
-npm run dev          # Start development
-npm run build        # Production build
-npm run lint         # Lint code
-npm run test         # Run tests
-npx supabase start   # Local Supabase
-npx supabase db push # Apply migrations
+npm run dev              # Start development
+npm run build            # Production build
+npm run lint             # Lint code
+npm run test             # Run tests
+npx prisma migrate dev   # Apply migrations
+npx prisma generate      # Generate Prisma client
+npx prisma studio        # Open Prisma Studio
 ```
 
 ---
@@ -222,11 +228,15 @@ npx supabase db push # Apply migrations
 ## Environment Variables
 
 ```
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY
+DATABASE_URL
+NEXTAUTH_URL
+NEXTAUTH_SECRET
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
 ANTHROPIC_API_KEY
 OPENAI_API_KEY (for embeddings)
+REDIS_URL
+AWS_S3_BUCKET (or CLOUDINARY_URL)
 ```
 
 ---

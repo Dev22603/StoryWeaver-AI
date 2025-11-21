@@ -223,13 +223,13 @@ Example:
 | Database | Type | Best For | Pricing |
 |----------|------|----------|---------|
 | **Pinecone** | Managed cloud | Production, easy setup | Free tier, then paid |
-| **Supabase pgvector** | Self-hosted/managed | Already using Supabase | Included in Supabase |
+| **PostgreSQL pgvector** | Self-hosted/managed | Already using PostgreSQL | Included with PostgreSQL |
 | **Weaviate** | Self-hosted/cloud | Complex queries | Free self-hosted |
 | **Chroma** | Local/embedded | Development, prototyping | Free |
 | **Qdrant** | Self-hosted/cloud | High performance | Free self-hosted |
 | **Milvus** | Self-hosted | Large scale | Free |
 
-**Recommendation for StoryWeaver**: Start with **Supabase pgvector** (you're already using Supabase) or **Pinecone** (easiest to start).
+**Recommendation for StoryWeaver**: Start with **PostgreSQL pgvector** (you're already using PostgreSQL with Prisma) or **Pinecone** (easiest to start).
 
 ---
 
@@ -383,7 +383,7 @@ Large Chunks (500-1000 tokens):
 │                     ▼                                            │
 │  ┌─────────────────────────────────────────┐                    │
 │  │         VECTOR DATABASE                 │                    │
-│  │         (Supabase pgvector)             │                    │
+│  │         (PostgreSQL pgvector)           │                    │
 │  ├─────────────────────────────────────────┤                    │
 │  │  • Chunk text                           │                    │
 │  │  • Embedding vector                     │                    │
@@ -731,17 +731,11 @@ export class GenerationService {
 
 ## 6. Step-by-Step Implementation
 
-### Step 1: Set Up Vector Database (Supabase pgvector)
+### Step 1: Set Up Vector Database (PostgreSQL pgvector)
 
 #### 1.1 Enable pgvector Extension
 
-**Manual Steps**:
-1. Go to Supabase Dashboard
-2. Navigate to Database → Extensions
-3. Search for "vector"
-4. Enable the extension
-
-**Or via SQL**:
+**Via Prisma Migration or SQL**:
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
@@ -750,7 +744,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 **Claude Code Prompt**:
 ```
-Create a Supabase migration for the anecdote_chunks table that will store RAG chunks for the StoryWeaver AI project.
+Create a Prisma migration for the anecdote_chunks table that will store RAG chunks for the StoryWeaver AI project.
 
 Requirements:
 1. Table name: anecdote_chunks
@@ -776,11 +770,11 @@ Requirements:
    - Regular indexes on project_id, anecdote_id, chunk_type
    - GIN indexes on array columns
 
-4. RLS policies:
-   - Users can only access their own chunks
-   - Enable RLS
+4. Access control:
+   - Implement user-based filtering in API layer
+   - Use Prisma middleware for access control
 
-5. Add a function for similarity search that:
+5. Add a PostgreSQL function for similarity search that:
    - Takes an embedding vector, project_id, limit, and optional filters
    - Returns chunks ordered by cosine similarity
    - Supports filtering by chunk_type, time range, people, themes
@@ -928,7 +922,7 @@ Generate the complete implementation with all edge case handling.
 
 **Claude Code Prompt**:
 ```
-Create a TypeScript vector store service for the StoryWeaver AI project using Supabase pgvector.
+Create a TypeScript vector store service for the StoryWeaver AI project using PostgreSQL pgvector with Prisma.
 
 Requirements:
 
@@ -937,7 +931,7 @@ Requirements:
 2. Class: VectorStoreService
 
 3. Dependencies:
-   - Use existing Supabase client from lib/supabase
+   - Use existing Prisma client from lib/prisma
    - Import types from previous services
 
 4. Types:
@@ -985,7 +979,7 @@ Requirements:
    - getChunksByAnecdoteId(anecdoteId: string): Promise<Chunk[]>
      - Get all chunks for a specific anecdote
 
-6. Use the match_chunks RPC function for similarity search
+6. Use raw SQL queries via Prisma.$queryRaw for vector similarity search
 
 7. Handle errors:
    - Database connection errors
@@ -1475,15 +1469,15 @@ Generate all API routes with full implementation.
 
 **Claude Code Prompt**:
 ```
-Create a Supabase Edge Function for processing book compilations in the background for the StoryWeaver AI project.
+Create a Bull queue worker for processing book compilations in the background for the StoryWeaver AI project.
 
 Requirements:
 
-1. File: supabase/functions/compile-book/index.ts
+1. File: workers/compile-book.ts
 
 2. Purpose: Handle long-running book compilation asynchronously
 
-3. Trigger: Called from API when compilation is requested
+3. Trigger: Job added to Bull queue from API when compilation is requested
 
 4. Implementation:
 
@@ -1513,19 +1507,19 @@ Requirements:
 
 6. Error handling:
    - Catch all errors
-   - Save error state to database
+   - Save error state to database via Prisma
    - User can see what went wrong
 
 7. Timeouts:
-   - Handle Edge Function timeout limits
+   - Configure Bull job timeout limits
    - Save progress before timeout
-   - Support resuming
+   - Support resuming with Bull job events
 
 8. Notifications:
    - Could trigger email when complete (optional)
-   - Update realtime subscription
+   - Update via WebSocket or polling
 
-Generate the complete Edge Function implementation.
+Generate the complete Bull worker implementation.
 ```
 
 ---
@@ -1540,7 +1534,7 @@ Requirements:
 
 1. Files:
    - lib/hooks/use-anecdote-ingest.ts
-   - supabase/functions/on-anecdote-complete/index.ts
+   - workers/on-anecdote-complete.ts
 
 2. Scenarios to handle:
 
@@ -1560,21 +1554,13 @@ Requirements:
    d. Project Deleted
       - Remove all chunks for project
 
-3. Database trigger approach:
-   ```sql
-   CREATE OR REPLACE FUNCTION handle_anecdote_complete()
-   RETURNS TRIGGER AS $$
-   BEGIN
-     IF NEW.status = 'completed' AND OLD.status != 'completed' THEN
-       -- Call Edge Function to ingest
-       PERFORM net.http_post(
-         url := 'https://your-project.supabase.co/functions/v1/ingest-anecdote',
-         body := json_build_object('anecdoteId', NEW.id)::text
-       );
-     END IF;
-     RETURN NEW;
-   END;
-   $$ LANGUAGE plpgsql;
+3. Implementation approach using Prisma middleware or API hooks:
+   ```typescript
+   // In API route when anecdote status changes to 'completed'
+   if (updatedAnecdote.status === 'completed' && previousStatus !== 'completed') {
+     // Add job to Bull queue for ingestion
+     await ingestionQueue.add('ingest-anecdote', { anecdoteId: updatedAnecdote.id });
+   }
    ```
 
 4. React hook for manual triggering:
@@ -1939,7 +1925,7 @@ Generate caching layer implementation.
 ### 10.2 Documentation
 
 - **OpenAI Embeddings**: https://platform.openai.com/docs/guides/embeddings
-- **Supabase pgvector**: https://supabase.com/docs/guides/ai/vector-columns
+- **PostgreSQL pgvector**: https://github.com/pgvector/pgvector
 - **Anthropic Claude**: https://docs.anthropic.com/
 
 ### 10.3 Research Papers

@@ -40,9 +40,9 @@
 6. Redirected to onboarding or dashboard
 
 **Technical Details**:
-- Uses Supabase Auth with Google provider
+- Uses NextAuth.js (Auth.js) with Google OAuth provider
 - Extracts email, name, and avatar from Google profile
-- Creates entry in `users` table on first login
+- Creates entry in `users` table on first login via Prisma
 - Issues JWT token for session management
 - Stores refresh token securely
 
